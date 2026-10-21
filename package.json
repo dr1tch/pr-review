@@ -68,6 +68,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "deb": {
+      "artifactName": "${name}_amd64.deb"
     }
   },
   "homepage": "https://github.com/dr1tch/pr-review"

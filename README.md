@@ -35,7 +35,7 @@ New versions arrive with `sudo apt upgrade`.
 
 ### Other downloads
 
-Get the `.deb`, AppImage or Windows installer from [Releases](https://github.com/dr1tch/pr-review/releases). On Ubuntu 24.04+, prefer the `.deb`: AppArmor blocks the AppImage's sandbox unless you start it with `--no-sandbox`.
+Get the `.deb`, AppImage or Windows installer from [Releases](https://github.com/dr1tch/pr-review/releases). The latest `.deb` is always at [`releases/latest/download/pr-review_amd64.deb`](https://github.com/dr1tch/pr-review/releases/latest/download/pr-review_amd64.deb). On Ubuntu 24.04+, prefer the `.deb`: AppArmor blocks the AppImage's sandbox unless you start it with `--no-sandbox`.
 
 ### Requirements
 
