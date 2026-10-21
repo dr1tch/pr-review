@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { AlertCircle, Check, CircleSlash, CircleX, FileDiff, FolderOpen, GitCommitHorizontal, GitPullRequest, Loader2, MessageSquare, Play, RefreshCw, X } from "lucide-react"
-import { Avatar, Composer, TimelineComment } from "@/components/comments"
+import { Avatar, Composer, TimelineComment, UserAvatar } from "@/components/comments"
+import { Markdown } from "@/components/markdown"
 import { FilesChanged } from "@/components/files-changed"
 import { ReviewMenu } from "@/components/review-menu"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { duration, timeAgo } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { AgentRun, NewComment, PullRequest, Reviewer, ReviewComment } from "@shared/types"
+import type { AgentRun, Commit, NewComment, PullRequest, Reviewer, ReviewComment } from "@shared/types"
 
 type Tab = "conversation" | "commits" | "files"
 
@@ -25,6 +26,16 @@ function RunStatus({ run }: { run: AgentRun | undefined }) {
   if (run.status === "done") return <Check className="size-4 text-success" aria-label="Done" />
   if (run.status === "cancelled") return <CircleSlash className="size-4 text-muted-foreground" aria-label="Cancelled" />
   return <CircleX className="size-4 text-danger" aria-label="Failed" />
+}
+
+// Commits grouped by calendar day, newest first, like GitHub's commits tab.
+function byDay(commits: Commit[]) {
+  const days = new Map<string, Commit[]>()
+  for (const c of commits) {
+    const day = new Date(c.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+    days.set(day, [...(days.get(day) ?? []), c])
+  }
+  return [...days]
 }
 
 // Re-render every second while something is running, for the elapsed timers.
@@ -56,6 +67,7 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
   const [tab, setTab] = useState<Tab>("files")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [commit, setCommit] = useState<{ sha: string; files: PullRequest["files"] } | null>(null) // Files changed limited to one commit
 
   const load = useCallback(async (repoPath: string, baseRef: string, fetch = false) => {
     if (!repoPath) return
@@ -64,6 +76,7 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
     try {
       const [p, c, a] = await Promise.all([window.api.loadPr(repoPath, baseRef, fetch), window.api.listComments(repoPath), window.api.listReviewers(repoPath)])
       setPr(p)
+      setCommit(null)
       setComments(c)
       setReviewers(a.reviewers)
       setRuns(a.runs)
@@ -101,6 +114,16 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
     if (path) {
       setRepo(path)
       load(path, base)
+    }
+  }
+
+  const showCommit = async (sha: string | null) => {
+    setTab("files")
+    if (!sha) return setCommit(null)
+    try {
+      setCommit({ sha, files: await window.api.commitDiff(pr!.repo, sha) })
+    } catch (e) {
+      setError((e as Error).message)
     }
   }
 
@@ -202,13 +225,18 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
           <div className="px-6">
             <div className="pt-6">
               <h1 className="text-[32px] leading-tight font-normal">
-                {pr.commits[0]?.subject ?? pr.branch} <span className="font-light text-muted-foreground">{pr.branch}</span>
+                {pr.title}{" "}
+                {pr.number != null && (
+                  <a href={pr.url!} target="_blank" rel="noreferrer" className="font-light text-muted-foreground hover:text-link">#{pr.number}</a>
+                )}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-muted-foreground">
                 <span className="flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-sm font-medium text-white">
                   <GitPullRequest className="size-4" /> Open
                 </span>
+                {pr.author.name && <UserAvatar name={pr.author.name} src={pr.author.avatar} size={20} />}
                 <span>
+                  {pr.author.name && <span className="font-semibold text-foreground">{pr.author.name} </span>}
                   wants to merge {pr.commits.length} commit{pr.commits.length === 1 ? "" : "s"} into <Ref>{pr.base}</Ref> from <Ref>{pr.branch}</Ref>
                 </span>
               </div>
@@ -240,7 +268,17 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
             {tab === "conversation" && (
               <div className="flex items-start gap-8 py-6">
                 <div className="min-w-0 flex-1 space-y-4">
-                  {prComments.length === 0 && <p className="text-muted-foreground">No comments yet. Run an agent reviewer or leave a comment.</p>}
+                  <div className="flex gap-4">
+                    <UserAvatar name={pr.author.name || pr.branch} src={pr.author.avatar} />
+                    <div className="min-w-0 flex-1 rounded-md border border-ring/50">
+                      <div className="rounded-t-md border-b border-ring/50 bg-ring/10 px-4 py-2 text-muted-foreground">
+                        <span className="font-semibold text-foreground">{pr.author.name || "Author"}</span> opened this {pr.url ? "pull request" : "branch"}
+                      </div>
+                      <div className="p-4">
+                        {pr.body.trim() ? <Markdown>{pr.body}</Markdown> : <p className="text-muted-foreground italic">No description provided.</p>}
+                      </div>
+                    </div>
+                  </div>
                   {prComments.map((c) => (
                     <TimelineComment key={c.id} c={c} onDelete={() => remove(c.id)} />
                   ))}
@@ -296,28 +334,69 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
             )}
 
             {tab === "commits" && (
-              <ul className="my-6 divide-y rounded-md border">
-                {pr.commits.map((c) => (
-                  <li key={c.sha} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{c.subject}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {c.author} committed {timeAgo(c.date)}
-                      </p>
-                    </div>
-                    <code className="font-mono text-xs text-muted-foreground">{c.sha}</code>
-                  </li>
+              <div className="my-6 space-y-6">
+                {byDay(pr.commits).map(([day, list]) => (
+                  <section key={day}>
+                    <h2 className="mb-2 flex items-center gap-2 text-muted-foreground">
+                      <GitCommitHorizontal className="size-4" /> Commits on {day}
+                    </h2>
+                    <ul className="divide-y rounded-md border">
+                      {list.map((c) => (
+                        <li key={c.sha} className="flex items-center gap-3 px-4 py-3">
+                          <div className="min-w-0 flex-1">
+                            <button type="button" onClick={() => showCommit(c.sha)} className="block max-w-full truncate text-left font-semibold hover:text-link hover:underline" title={c.body || c.subject}>
+                              {c.subject}
+                            </button>
+                            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <UserAvatar name={c.author} src={c.avatar} size={16} />
+                              <span className="font-semibold text-foreground" title={c.email}>{c.author}</span> committed {timeAgo(c.date)}
+                            </p>
+                          </div>
+                          <button type="button" onClick={() => showCommit(c.sha)} className="rounded-md border px-2 py-0.5 font-mono text-xs text-muted-foreground hover:text-link" aria-label={`Show changes in ${c.sha}`}>
+                            {c.sha}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 ))}
-                {pr.commits.length === 0 && <li className="px-4 py-3 text-muted-foreground">No commits ahead of {pr.base}.</li>}
-              </ul>
+                {pr.commits.length === 0 && <p className="text-muted-foreground">No commits ahead of {pr.base}.</p>}
+              </div>
             )}
 
+            {tab === "files" && commit && (() => {
+              const c = pr.commits.find((x) => x.sha === commit.sha)
+              return c && (
+                <div className="mt-4 flex items-center gap-2 rounded-md border bg-muted px-4 py-2">
+                  <UserAvatar name={c.author} src={c.avatar} size={20} />
+                  <span className="font-semibold" title={c.email}>{c.author}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground" title={c.body || c.subject}>{c.subject}</span>
+                  <code className="font-mono text-xs text-muted-foreground">{c.sha}</code>
+                  <Button size="xs" variant="outline" onClick={() => showCommit(null)}>Show all changes</Button>
+                </div>
+              )
+            })()}
             {tab === "files" && (
               <FilesChanged
-                files={pr.files}
-                comments={comments}
-                onAdd={(file, anchor, body) => add({ file, ...anchor, body })}
+                key={commit?.sha ?? "all"}
+                files={commit?.files ?? pr.files}
+                // line comments anchor to the full PR diff, so a single commit is read-only
+                comments={commit ? [] : comments}
+                onAdd={commit ? undefined : (file, anchor, body) => add({ file, ...anchor, body })}
                 onDelete={remove}
+                toolbar={
+                  <select
+                    value={commit?.sha ?? ""}
+                    onChange={(e) => showCommit(e.target.value || null)}
+                    aria-label="Show changes from"
+                    className="ml-auto h-7 max-w-80 truncate rounded-md border bg-muted px-2 text-xs text-foreground"
+                  >
+                    <option value="">All commits ({pr.commits.length})</option>
+                    {pr.commits.map((c) => (
+                      <option key={c.sha} value={c.sha}>{c.sha} · {c.subject} · {c.author}</option>
+                    ))}
+                  </select>
+                }
               />
             )}
           </div>

@@ -19,6 +19,18 @@ export function SeverityLabel({ severity }: { severity: Severity | null }) {
   return <span className={cn("rounded-full border px-2 text-xs leading-[18px] font-medium", SEVERITY[severity])}>{severity}</span>
 }
 
+// A person: their GitHub avatar when known, otherwise their initial.
+export function UserAvatar({ name, src, size = 40 }: { name: string; src: string | null; size?: number }) {
+  const [broken, setBroken] = useState(false)
+  if (src && !broken)
+    return <img src={src} alt="" width={size} height={size} onError={() => setBroken(true)} className="shrink-0 rounded-full border bg-secondary" style={{ width: size, height: size }} />
+  return (
+    <span style={{ width: size, height: size, fontSize: size * 0.4 }} className="flex shrink-0 items-center justify-center rounded-full border bg-secondary font-semibold uppercase" aria-hidden>
+      {name.trim()[0] ?? "?"}
+    </span>
+  )
+}
+
 export function Avatar({ author, size = 40 }: { author: string; size?: number }) {
   const isAgent = author !== "You"
   return (

@@ -10,8 +10,9 @@ import type { ReviewComment, Side } from "@shared/types"
 type Props = {
   files: parseDiff.File[]
   comments: ReviewComment[]
-  onAdd: (file: string, anchor: { side: Side | null; line: number | null }, body: string) => Promise<void>
+  onAdd?: (file: string, anchor: { side: Side | null; line: number | null }, body: string) => Promise<void> // omitted = read-only
   onDelete: (id: string) => void
+  toolbar?: React.ReactNode
 }
 
 const STATUS_ICON = {
@@ -21,7 +22,7 @@ const STATUS_ICON = {
   modified: <FileDiff className="size-4 text-attention" />,
 }
 
-export function FilesChanged({ files, comments, onAdd, onDelete }: Props) {
+export function FilesChanged({ files, comments, onAdd, onDelete, toolbar }: Props) {
   const [filter, setFilter] = useState("")
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<string | null>(null)
@@ -98,6 +99,7 @@ export function FilesChanged({ files, comments, onAdd, onDelete }: Props) {
             <span className="font-semibold text-foreground">{files.length}</span> files changed
           </span>
           <DiffStat add={additions} del={deletions} />
+          {toolbar}
         </div>
         {shown.map((f) => {
           const name = fileName(f)
@@ -106,7 +108,7 @@ export function FilesChanged({ files, comments, onAdd, onDelete }: Props) {
               key={name}
               file={f}
               comments={comments.filter((c) => c.file === name)}
-              onAdd={(anchor, body) => onAdd(name, anchor, body)}
+              onAdd={onAdd && ((anchor, body) => onAdd(name, anchor, body))}
               onDelete={onDelete}
             />
           )

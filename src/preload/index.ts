@@ -10,6 +10,7 @@ const call = <T>(channel: string, ...args: unknown[]): Promise<T> =>
 const api = {
   pickRepo: () => call<string | null>("repo:pick"),
   loadPr: (repo: string, base: string, fetch = false) => call<PullRequest>("pr:load", repo, base, fetch),
+  commitDiff: (repo: string, sha: string) => call<PullRequest["files"]>("pr:commit", repo, sha),
   listComments: (repo: string) => call<ReviewComment[]>("comments:list", repo),
   addComment: (repo: string, c: NewComment) => call<ReviewComment>("comments:add", repo, c),
   deleteComment: (id: string) => call<void>("comments:delete", id),

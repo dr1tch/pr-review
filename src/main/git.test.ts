@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { getPullRequest } from "./git.ts"
+import { commitDiff, getPullRequest, loginFor } from "./git.ts"
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd })
 
@@ -55,4 +55,31 @@ test("a failed fetch is reported, not thrown", async () => {
   sh(repo, "commit", "-qm", "base")
   const pr = await getPullRequest(repo, "master", true)
   assert.match(pr.fetchError ?? "", /origin/)
+})
+
+test("maps commit emails to GitHub logins", () => {
+  const known = new Map([["me@work.io", "dr1tch"]])
+  assert.equal(loginFor("Me@Work.io", known), "dr1tch")
+  assert.equal(loginFor("123+octo-cat@users.noreply.github.com", known), "octo-cat")
+  assert.equal(loginFor("someone@else.com", known), null)
+})
+
+test("commit diff shows only that commit; PR title falls back to the oldest commit", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "pr-review-"))
+  sh(repo, "init", "-q", "-b", "master")
+  writeFileSync(join(repo, "a"), "a\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "base")
+  sh(repo, "checkout", "-qb", "feat")
+  writeFileSync(join(repo, "one"), "1\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "first change", "-m", "why it matters")
+  writeFileSync(join(repo, "two"), "2\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "second change")
+  const pr = await getPullRequest(repo, "master")
+  assert.equal(pr.title, "first change")
+  assert.deepEqual(pr.commits.map((c) => [c.subject, c.body]), [["second change", ""], ["first change", "why it matters"]])
+  assert.deepEqual((await commitDiff(repo, pr.commits[1].sha)).map((f) => f.to), ["one"])
+  await assert.rejects(commitDiff(repo, "--output=x"))
 })

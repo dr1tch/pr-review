@@ -36,7 +36,7 @@ export function DiffStat({ add, del }: { add: number; del: number }) {
 type Props = {
   file: parseDiff.File
   comments: ReviewComment[]
-  onAdd: (anchor: { side: Side | null; line: number | null }, body: string) => Promise<void>
+  onAdd?: (anchor: { side: Side | null; line: number | null }, body: string) => Promise<void> // omitted = read-only
   onDelete: (id: string) => void
 }
 
@@ -85,14 +85,14 @@ export function DiffFile({ file, comments, onAdd, onDelete }: Props) {
         <td className={cn("group/num relative px-2 text-right align-top text-muted-foreground select-none", numBg)}>
           {cell && (
             <>
-              <button
+              {onAdd && <button
                 type="button"
                 aria-label={`Comment on ${side === "old" ? "old" : "new"} line ${cell.no}`}
                 onClick={() => setDraft(key(side, cell.no))}
                 className="absolute top-0 -right-2.5 z-[1] flex size-5 items-center justify-center rounded-md bg-ring text-white opacity-0 group-hover/num:opacity-100 focus-visible:opacity-100"
               >
                 <Plus className="size-3.5" />
-              </button>
+              </button>}
               {cell.no}
             </>
           )}
@@ -127,7 +127,7 @@ export function DiffFile({ file, comments, onAdd, onDelete }: Props) {
                     submitLabel="Add single comment"
                     onCancel={() => setDraft(null)}
                     onSubmit={async (body) => {
-                      await onAdd({ side: side as Side, line: Number(line) }, body)
+                      await onAdd!({ side: side as Side, line: Number(line) }, body)
                       setDraft(null)
                     }}
                   />

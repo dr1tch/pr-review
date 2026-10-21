@@ -16,11 +16,18 @@ export type ReviewComment = {
 
 export type NewComment = Pick<ReviewComment, "file" | "side" | "line" | "body">
 
+export type Commit = { sha: string; subject: string; body: string; author: string; email: string; avatar: string | null; date: string }
+
 export type PullRequest = {
   repo: string
   branch: string
   base: string
-  commits: { sha: string; subject: string; author: string; date: string }[]
+  title: string
+  body: string
+  url: string | null // GitHub PR, when `gh` finds one for the branch
+  number: number | null
+  author: { name: string; avatar: string | null }
+  commits: Commit[]
   files: parseDiff.File[]
   fetchError?: string
 }

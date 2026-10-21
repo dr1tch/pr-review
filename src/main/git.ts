@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import parseDiff from "parse-diff"
-import type { PullRequest } from "@shared/types"
+import type { Commit, PullRequest } from "@shared/types"
 
 const run = promisify(execFile)
 
@@ -62,20 +62,70 @@ async function fetchBase(repo: string, base: string) {
   }
 }
 
+// Diff of a single commit against its first parent (merge commits show what they brought in).
+export async function commitDiff(repo: string, sha: string) {
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(`Invalid commit: ${sha}`)
+  return parseDiff(await git(repo, ["diff", "--no-color", "--no-ext-diff", `${sha}^1`, sha]))
+}
+
+type GhPr = {
+  number: number
+  title: string
+  body: string
+  url: string
+  author: { login: string; name?: string }
+  commits: { authors: { email: string; login: string }[] }[]
+}
+
+// The GitHub PR for this branch, if gh is installed, logged in and finds one. Never prompts.
+async function githubPr(repo: string, branch: string): Promise<GhPr | null> {
+  try {
+    const { stdout } = await run("gh", ["pr", "view", branch, "--json", "number,title,body,url,author,commits"], {
+      cwd: repo, timeout: 15_000, windowsHide: true, env: { ...process.env, GH_PROMPT_DISABLED: "1", GIT_TERMINAL_PROMPT: "0" },
+    })
+    return JSON.parse(stdout)
+  } catch {
+    return null
+  }
+}
+
+const avatarOf = (login: string) => `https://github.com/${encodeURIComponent(login)}.png?size=80`
+
+// GitHub login for a commit email: from the PR's commit authors, else a users.noreply.github.com address.
+export function loginFor(email: string, known: Map<string, string>) {
+  return known.get(email.toLowerCase()) ?? /^(?:\d+\+)?([\w-]+)@users\.noreply\.github\.com$/i.exec(email)?.[1] ?? null
+}
+
+const SEP = "\x1f", END = "\x1e"
+
 export async function getPullRequest(repo: string, wanted: string, fetch = false): Promise<PullRequest> {
   const fetchError = fetch ? await fetchBase(repo, wanted) : undefined
   const base = await resolveBase(repo, wanted)
-  const [branch, diff, log] = await Promise.all([
-    currentBranch(repo),
+  const branch = await currentBranch(repo)
+  const [diff, log, gh] = await Promise.all([
     diffAgainst(repo, base),
-    git(repo, ["log", "--format=%h%x09%an%x09%aI%x09%s", `${assertRef(base)}..HEAD`]),
+    git(repo, ["log", `--format=%h${SEP}%an${SEP}%ae${SEP}%aI${SEP}%s${SEP}%b${END}`, `${assertRef(base)}..HEAD`]),
+    githubPr(repo, branch),
   ])
-  const commits = log
-    .split("\n")
+  const known = new Map(gh?.commits.flatMap((c) => c.authors.map((a) => [a.email.toLowerCase(), a.login] as const)) ?? [])
+  const commits: Commit[] = log
+    .split(END)
+    .map((r) => r.trim())
     .filter(Boolean)
-    .map((l) => {
-      const [sha, author, date, ...rest] = l.split("\t")
-      return { sha, author, date, subject: rest.join("\t") }
+    .map((r) => {
+      const [sha, author, email, date, subject, body] = r.split(SEP)
+      const login = loginFor(email, known)
+      return { sha, author, email, date, subject, body: body.trim(), avatar: login ? avatarOf(login) : null }
     })
-  return { repo, branch, base, commits, files: parseDiff(diff), fetchError }
+  // git log is newest first; like GitHub, a PR without its own title takes the oldest commit's message
+  const first = commits.at(-1)
+  return {
+    repo, branch, base,
+    title: gh?.title ?? first?.subject ?? branch,
+    body: gh?.body ?? (commits.length === 1 ? first!.body : ""),
+    url: gh?.url ?? null,
+    number: gh?.number ?? null,
+    author: gh ? { name: gh.author.login, avatar: avatarOf(gh.author.login) } : { name: first?.author ?? "", avatar: first?.avatar ?? null },
+    commits, files: parseDiff(diff), fetchError,
+  }
 }
