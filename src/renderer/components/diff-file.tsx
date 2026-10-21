@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Plus } from "lucide-react"
 import type parseDiff from "parse-diff"
 import { Composer, Thread } from "@/components/comments"
 import { highlightLines, languageFor } from "@/lib/highlight"
-import { splitRows, type Cell } from "@/lib/split"
+import { splitRows, type Cell, type Row } from "@/lib/split"
 import { cn } from "@/lib/utils"
 import type { ReviewComment, Side } from "@shared/types"
 
@@ -48,9 +48,14 @@ export function DiffFile({ file, comments, onAdd, onDelete }: Props) {
   const html = useMemo(() => {
     const lang = languageFor(name)
     const map = new Map<string, string>()
-    for (const side of ["old", "new"] as const) {
-      const cells = rows.flatMap((r) => ("hunk" in r ? [] : (side === "old" ? r.left : r.right) ?? []))
-      highlightLines(cells.map((c) => c.text), lang).forEach((h, i) => map.set(key(side, cells[i].no), h))
+    // per hunk: hunks are separate fragments, so a string or comment left open in one can't colour the next
+    const hunks: Row[][] = []
+    for (const r of rows) if ("hunk" in r) hunks.push([]); else hunks.at(-1)?.push(r)
+    for (const hunk of hunks) {
+      for (const side of ["old", "new"] as const) {
+        const cells = hunk.flatMap((r) => ("hunk" in r ? [] : (side === "old" ? r.left : r.right) ?? []))
+        highlightLines(cells.map((c) => c.text), lang).forEach((h, i) => map.set(key(side, cells[i].no), h))
+      }
     }
     return map
   }, [rows, name])
