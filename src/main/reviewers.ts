@@ -10,7 +10,8 @@ import { addComments, finishRun, insertRun } from "./db"
 const TIMEOUT_MS = 30 * 60 * 1000
 const MAX_DIFF = 200_000
 // read-only; Skill/Agent let skills load and fan out to sub-agents under the same limits
-const READ_ONLY_TOOLS = "Read,Grep,Glob,Skill,Agent,Task,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(git status:*)"
+// No Bash at all: even git can write files (git diff --output=...), and the diff is already in the prompt.
+const READ_ONLY_TOOLS = "Read,Grep,Glob,Skill,Agent,Task"
 const isWin = process.platform === "win32"
 
 const NAME = /^[\w.:-]+$/ // passed on the command line (through a shell on Windows), so only plain names
@@ -123,11 +124,11 @@ export function startReview(repo: string, branch: string, base: string, reviewer
       "-p",
       ...(reviewer.kind === "agent" ? ["--agent", agent] : []),
       "--output-format", "json",
-      // read-only: no edits, only inspecting git commands
+      // read-only: no edits, no shell
       "--allowedTools", isWin ? `"${READ_ONLY_TOOLS}"` : READ_ONLY_TOOLS,
       // the user's settings may default to bypassPermissions, which ignores the allow-list
       "--permission-mode", "default",
-      "--disallowedTools", "Edit,Write,NotebookEdit",
+      "--disallowedTools", "Edit,Write,NotebookEdit,Bash",
     ],
     // shell on Windows so the npm-installed claude.cmd resolves; args are validated plain names
     { cwd: repo, stdio: ["pipe", "pipe", "pipe"], shell: isWin, windowsHide: true },
