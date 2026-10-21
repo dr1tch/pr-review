@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process"
-import { readFile } from "node:fs/promises"
+import { lstat, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import parseDiff from "parse-diff"
-import type { Commit, NewPullRequest, PrMeta, PullRequest } from "@shared/types"
+import type { ChangedFile, Commit, NewPullRequest, PrMeta, PullRequest } from "@shared/types"
 
 const run = promisify(execFile)
 
@@ -53,22 +53,35 @@ const DIFF = ["diff", "--no-color", "--no-ext-diff"]
 // shortcut: capped at 200 files so a repo without a .gitignore can't flood the view.
 async function untrackedDiff(repo: string) {
   const files = (await git(repo, ["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean).slice(0, 200)
-  const diffs = await Promise.all(files.map((f) =>
-    git(repo, [...DIFF, "--no-index", "--", "/dev/null", f]).catch((e: { stdout?: string }) => e.stdout ?? "")))
-  return diffs.join("")
+  const omitted: ChangedFile[] = []
+  const diffs = await Promise.all(files.map(async (f) => {
+    // Generated files can contain millions of lines; bound them before git reads or parses their contents.
+    const info = await lstat(join(repo, f)).catch(() => null)
+    if (info && info.size > 1024 * 1024) {
+      omitted.push({ from: "/dev/null", to: f, new: true, chunks: [], additions: 0, deletions: 0, omitted: "Diff omitted: untracked file exceeds the 1 MiB display limit." })
+      return ""
+    }
+    return git(repo, [...DIFF, "--no-index", "--", "/dev/null", f]).catch((e: { stdout?: string }) => e.stdout ?? "")
+  }))
+  return { text: diffs.join(""), omitted: omitted.sort((a, b) => a.to!.localeCompare(b.to!)) }
 }
 
 // Changes since the merge-base, like GitHub's PR view, plus uncommitted and untracked work.
-export async function diffAgainst(repo: string, base: string) {
+async function changesAgainst(repo: string, base: string) {
   const mergeBase = (await git(repo, ["merge-base", assertRef(base), "HEAD"])).trim()
   const [tracked, untracked] = await Promise.all([git(repo, [...DIFF, mergeBase]), untrackedDiff(repo)])
-  return tracked + untracked
+  return { text: tracked + untracked.text, omitted: untracked.omitted }
+}
+
+export async function diffAgainst(repo: string, base: string) {
+  const diff = await changesAgainst(repo, base)
+  return diff.text + diff.omitted.map((f) => `\n${JSON.stringify(f.to)}: ${f.omitted}\n`).join("")
 }
 
 // Work not committed yet: tracked changes against HEAD plus untracked files.
 export async function uncommittedDiff(repo: string) {
   const [tracked, untracked] = await Promise.all([git(repo, [...DIFF, "HEAD"]), untrackedDiff(repo)])
-  return parseDiff(tracked + untracked)
+  return [...parseDiff(tracked + untracked.text), ...untracked.omitted]
 }
 
 // Updates origin's copy of the base branch; never prompts for credentials, gives up after 30s.
@@ -172,7 +185,7 @@ export async function getPullRequest(repo: string, wanted: string, fetch = false
   const base = await resolveBase(repo, wanted)
   const branch = await currentBranch(repo)
   const [diff, uncommitted, log, gh] = await Promise.all([
-    diffAgainst(repo, base),
+    changesAgainst(repo, base),
     uncommittedDiff(repo),
     git(repo, ["log", `--format=%h${SEP}%an${SEP}%ae${SEP}%aI${SEP}%s${SEP}%b${END}`, `${assertRef(base)}..HEAD`]),
     githubPr(repo, branch),
@@ -196,6 +209,6 @@ export async function getPullRequest(repo: string, wanted: string, fetch = false
     url: gh?.url ?? null,
     number: gh?.number ?? null,
     author: gh ? { name: gh.author.login, avatar: avatarOf(gh.author.login) } : { name: first?.author ?? "", avatar: first?.avatar ?? null },
-    commits, files: parseDiff(diff), uncommitted, fetchError,
+    commits, files: [...parseDiff(diff.text), ...diff.omitted], uncommitted, fetchError,
   }
 }

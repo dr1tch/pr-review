@@ -1,11 +1,11 @@
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, Plus } from "lucide-react"
 import type parseDiff from "parse-diff"
 import { Composer, Thread } from "@/components/comments"
 import { highlightLines, languageFor } from "@/lib/highlight"
 import { splitRows, type Cell, type Row } from "@/lib/split"
 import { cn } from "@/lib/utils"
-import type { ReviewComment, Side } from "@shared/types"
+import type { ChangedFile, ReviewComment, Side } from "@shared/types"
 
 export function fileName(f: parseDiff.File) {
   return (f.to && f.to !== "/dev/null" ? f.to : f.from) ?? "unknown"
@@ -34,7 +34,8 @@ export function DiffStat({ add, del }: { add: number; del: number }) {
 }
 
 type Props = {
-  file: parseDiff.File
+  id: string
+  file: ChangedFile
   comments: ReviewComment[]
   onAdd?: (anchor: { side: Side | null; line: number | null }, body: string) => Promise<void> // omitted = read-only
   onDelete: (id: string) => void
@@ -42,7 +43,32 @@ type Props = {
 
 const key = (side: Side, line: number) => `${side}:${line}`
 
-export function DiffFile({ file, comments, onAdd, onDelete }: Props) {
+export function DiffFile(props: Props) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    // Hidden repositories and distant files must not build or highlight their diff tables.
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return
+      setReady(true)
+      observer.disconnect()
+    }, { rootMargin: "600px 0px" })
+    observer.observe(ref.current!)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div ref={ref} id={props.id} className="scroll-mt-[57px]">
+      {ready ? <RenderedDiffFile {...props} /> : (
+        <div className="rounded-md border bg-muted p-4 text-muted-foreground" style={{ minHeight: 70 + props.file.chunks.reduce((n, c) => n + c.changes.length * 20 + 28, 0) }}>
+          {fileName(props.file)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RenderedDiffFile({ file, comments, onAdd, onDelete }: Props) {
   const name = fileName(file)
   const rows = useMemo(() => splitRows(file), [file])
   const html = useMemo(() => {
@@ -146,7 +172,7 @@ export function DiffFile({ file, comments, onAdd, onDelete }: Props) {
   }
 
   return (
-    <section id={`file-${name}`} className="scroll-mt-[57px] rounded-md border">
+    <section className="rounded-md border">
       <header className="sticky top-[45px] z-10 flex items-center gap-2 rounded-t-md border-b bg-muted px-2 py-1.5">
         <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Collapse file" : "Expand file"} className="rounded-md p-1 text-muted-foreground hover:bg-accent">
           {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
@@ -165,7 +191,7 @@ export function DiffFile({ file, comments, onAdd, onDelete }: Props) {
             </div>
           )}
           {rows.length === 0 ? (
-            <p className="p-4 text-muted-foreground">Binary file or no textual changes.</p>
+            <p className="p-4 text-muted-foreground">{file.omitted ?? "Binary file or no textual changes."}</p>
           ) : (
             <div className="overflow-x-auto rounded-b-md">
               <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">

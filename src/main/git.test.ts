@@ -1,12 +1,38 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { commitDiff, createPullRequest, getPullRequest, loginFor } from "./git.ts"
+import { commitDiff, createPullRequest, diffAgainst, getPullRequest, loginFor } from "./git.ts"
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd })
+
+test("oversized untracked files stay listed without loading their contents into diffs", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "pr-review-"))
+  sh(repo, "init", "-q", "-b", "master")
+  writeFileSync(join(repo, "base"), "base\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "base")
+  const contents = "x".repeat(1024 * 1024 + 1)
+  writeFileSync(join(repo, "large graph.json"), contents)
+  writeFileSync(join(repo, "small.txt"), "still visible\n")
+  if (process.platform !== "win32") symlinkSync("large graph.json", join(repo, "link.txt"))
+  const pr = await getPullRequest(repo, "master")
+  for (const files of [pr.files, pr.uncommitted]) {
+    const large = files.find((f) => f.to === "large graph.json")
+    assert.match(large?.omitted ?? "", /1 MiB/)
+    assert.deepEqual(large?.chunks, [])
+    assert.equal(large?.new, true)
+    assert.equal(files.find((f) => f.to === "small.txt")?.additions, 1)
+    if (process.platform !== "win32") assert.equal(files.find((f) => f.to === "link.txt")?.additions, 1)
+  }
+  const review = await diffAgainst(repo, "master")
+  assert.ok(!review.includes(contents))
+  assert.match(review, /large graph.json/)
+  assert.match(review, /omitted/i)
+  assert.equal(readFileSync(join(repo, "large graph.json"), "utf8"), contents)
+})
 
 test("rebased branch with a stale local master shows only its own changes", async () => {
   const root = mkdtempSync(join(tmpdir(), "pr-review-"))

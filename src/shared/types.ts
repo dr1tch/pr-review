@@ -18,6 +18,8 @@ export type NewComment = Pick<ReviewComment, "file" | "side" | "line" | "body">
 
 export type Commit = { sha: string; subject: string; body: string; author: string; email: string; avatar: string | null; date: string }
 
+export type ChangedFile = parseDiff.File & { omitted?: string }
+
 export type PullRequest = {
   repo: string
   branch: string
@@ -28,8 +30,8 @@ export type PullRequest = {
   number: number | null
   author: { name: string; avatar: string | null }
   commits: Commit[]
-  files: parseDiff.File[] // since the merge-base, uncommitted work included
-  uncommitted: parseDiff.File[] // working tree vs HEAD, untracked files included
+  files: ChangedFile[] // since the merge-base, uncommitted work included
+  uncommitted: ChangedFile[] // working tree vs HEAD, untracked files included
   fetchError?: string
 }
 

@@ -1,14 +1,13 @@
-import { useMemo, useState } from "react"
+import { useId, useMemo, useState } from "react"
 import { ChevronDown, ChevronRight, FileDiff, FileMinus, FilePlus, Folder, FolderOpen, MessageSquare, Search } from "lucide-react"
-import type parseDiff from "parse-diff"
 import { DiffFile, DiffStat, fileName, fileStatus } from "@/components/diff-file"
 import { Input } from "@/components/ui/input"
 import { buildTree, type TreeNode } from "@/lib/file-tree"
 import { cn } from "@/lib/utils"
-import type { ReviewComment, Side } from "@shared/types"
+import type { ChangedFile, ReviewComment, Side } from "@shared/types"
 
 type Props = {
-  files: parseDiff.File[]
+  files: ChangedFile[]
   comments: ReviewComment[]
   onAdd?: (file: string, anchor: { side: Side | null; line: number | null }, body: string) => Promise<void> // omitted = read-only
   onDelete: (id: string) => void
@@ -23,6 +22,8 @@ const STATUS_ICON = {
 }
 
 export function FilesChanged({ files, comments, onAdd, onDelete, toolbar }: Props) {
+  const id = useId()
+  const fileId = (name: string) => `${id}-file-${name}`
   const [filter, setFilter] = useState("")
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<string | null>(null)
@@ -41,7 +42,7 @@ export function FilesChanged({ files, comments, onAdd, onDelete, toolbar }: Prop
       return n
     })
 
-  const renderNode = (node: TreeNode<parseDiff.File>, depth: number): React.ReactNode => {
+  const renderNode = (node: TreeNode<ChangedFile>, depth: number): React.ReactNode => {
     const pad = { paddingLeft: 8 + depth * 16 }
     if (node.file) {
       const name = fileName(node.file)
@@ -49,7 +50,7 @@ export function FilesChanged({ files, comments, onAdd, onDelete, toolbar }: Prop
       return (
         <li key={node.path}>
           <a
-            href={`#file-${name}`}
+            href={`#${fileId(name)}`}
             onClick={() => setSelected(name)}
             style={pad}
             aria-current={selected === name ? "true" : undefined}
@@ -106,6 +107,7 @@ export function FilesChanged({ files, comments, onAdd, onDelete, toolbar }: Prop
           return (
             <DiffFile
               key={name}
+              id={fileId(name)}
               file={f}
               comments={comments.filter((c) => c.file === name)}
               onAdd={onAdd && ((anchor, body) => onAdd(name, anchor, body))}
