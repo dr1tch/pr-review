@@ -1,4 +1,5 @@
 import { useState } from "react"
+import type * as React from "react"
 import { Bot, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -105,6 +106,46 @@ export function Thread({ comments, onDelete, composer }: { comments: ReviewComme
   )
 }
 
+// Markdown textarea with GitHub's Write / Preview tabs.
+export function MarkdownEditor({ value, onChange, preview, onPreview, className, ...props }: Omit<React.ComponentProps<typeof Textarea>, "value" | "onChange"> & {
+  value: string
+  onChange: (value: string) => void
+  preview: boolean
+  onPreview: (preview: boolean) => void
+}) {
+  return (
+    <>
+      <div role="tablist" className="flex gap-1 rounded-t-md border-b bg-muted px-2 pt-2">
+        {(["Write", "Preview"] as const).map((t) => {
+          const active = (t === "Preview") === preview
+          return (
+            <button
+              key={t}
+              role="tab"
+              type="button"
+              aria-selected={active}
+              onClick={() => onPreview(t === "Preview")}
+              className={cn(
+                "-mb-px rounded-t-md border border-transparent px-4 py-2 text-sm",
+                active ? "border-border border-b-background bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t}
+            </button>
+          )
+        })}
+      </div>
+      <div className="p-2 pb-0">
+        {preview ? (
+          <div className={cn("min-h-24 px-2 py-1", className)}>{value.trim() ? <Markdown>{value}</Markdown> : <p className="text-muted-foreground">Nothing to preview</p>}</div>
+        ) : (
+          <Textarea value={value} onChange={(e) => onChange(e.target.value)} className={cn("min-h-24 rounded-md bg-background dark:bg-background", className)} {...props} />
+        )}
+      </div>
+    </>
+  )
+}
+
 export function Composer({ onSubmit, onCancel, submitLabel = "Comment" }: { onSubmit: (body: string) => Promise<void>; onCancel?: () => void; submitLabel?: string }) {
   const [body, setBody] = useState("")
   const [preview, setPreview] = useState(false)
@@ -122,53 +163,28 @@ export function Composer({ onSubmit, onCancel, submitLabel = "Comment" }: { onSu
   }
   return (
     <div className="rounded-md border bg-background">
-      <div role="tablist" className="flex gap-1 rounded-t-md border-b bg-muted px-2 pt-2">
-        {(["Write", "Preview"] as const).map((t) => {
-          const active = (t === "Preview") === preview
-          return (
-            <button
-              key={t}
-              role="tab"
-              type="button"
-              aria-selected={active}
-              onClick={() => setPreview(t === "Preview")}
-              className={cn(
-                "-mb-px rounded-t-md border border-transparent px-4 py-2 text-sm",
-                active ? "border-border border-b-background bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t}
-            </button>
-          )
-        })}
-      </div>
-      <div className="p-2">
-        {preview ? (
-          <div className="min-h-24 px-2 py-1">{body.trim() ? <Markdown>{body}</Markdown> : <p className="text-muted-foreground">Nothing to preview</p>}</div>
-        ) : (
-          <Textarea
-            autoFocus={!!onCancel}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit()
-              if (e.key === "Escape") onCancel?.()
-            }}
-            placeholder="Leave a comment (Markdown supported, Ctrl+Enter to send)"
-            aria-label="Comment"
-            className="min-h-24 rounded-md bg-background dark:bg-background"
-          />
-        )}
-        <div className="mt-2 flex justify-end gap-2">
-          {onCancel && (
-            <Button variant="outline" size="sm" onClick={onCancel}>
-              Cancel
-            </Button>
-          )}
-          <Button size="sm" disabled={busy || !body.trim()} onClick={submit}>
-            {submitLabel}
+      <MarkdownEditor
+        value={body}
+        onChange={setBody}
+        preview={preview}
+        onPreview={setPreview}
+        autoFocus={!!onCancel}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit()
+          if (e.key === "Escape") onCancel?.()
+        }}
+        placeholder="Leave a comment (Markdown supported, Ctrl+Enter to send)"
+        aria-label="Comment"
+      />
+      <div className="flex justify-end gap-2 p-2">
+        {onCancel && (
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Cancel
           </Button>
-        </div>
+        )}
+        <Button size="sm" disabled={busy || !body.trim()} onClick={submit}>
+          {submitLabel}
+        </Button>
       </div>
     </div>
   )

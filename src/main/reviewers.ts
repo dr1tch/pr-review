@@ -116,7 +116,7 @@ export function startReview(repo: string, branch: string, base: string, reviewer
     : "Review"
   const prompt = `${how} the pull request for branch "${branch}" against base "${base}" in this repository. ` +
     `Read surrounding code as needed. Do not modify any files.\n\n${OUTPUT_FORMAT}\n\n` +
-    `Diff (\`git diff ${base}...HEAD\`${truncated ? ", truncated: read the remaining files yourself" : ""}):\n` +
+    `Diff (\`git diff $(git merge-base ${base} HEAD)\`, uncommitted and untracked work included${truncated ? ", truncated: read the remaining files yourself" : ""}):\n` +
     "```diff\n" + diff.slice(0, MAX_DIFF) + "\n```"
   const child = spawn(
     "claude",

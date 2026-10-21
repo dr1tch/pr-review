@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
-import type { NewComment, ReviewerKind } from "@shared/types"
+import type { NewComment, NewPullRequest, ReviewerKind } from "@shared/types"
 import { cancelReview, listReviewers, startReview } from "./reviewers"
 import { addComments, deleteComment, listComments, listRuns, openDb } from "./db"
-import { commitDiff, currentBranch, diffAgainst, getPullRequest, resolveBase, resolveRepo } from "./git"
+import { commitDiff, createPullRequest, currentBranch, diffAgainst, getPullRequest, prMeta, resolveBase, resolveRepo } from "./git"
 
 // Apps launched from a desktop menu don't get the shell's PATH, so `claude`/`git` from ~/.local/bin etc. go missing.
 function loadShellPath() {
@@ -49,6 +49,8 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0]
   })
   ipcMain.handle("pr:load", async (_e, repoPath: string, base: string, fetch: boolean) => getPullRequest(await resolveRepo(repoPath), base, fetch === true))
+  ipcMain.handle("pr:meta", async (_e, repoPath: string) => prMeta(await resolveRepo(repoPath)))
+  ipcMain.handle("pr:create", async (_e, repoPath: string, p: NewPullRequest) => createPullRequest(await resolveRepo(repoPath), p ?? ({} as NewPullRequest)))
   ipcMain.handle("pr:commit", async (_e, repoPath: string, sha: string) => commitDiff(await resolveRepo(repoPath), String(sha)))
   ipcMain.handle("comments:list", async (_e, repo: string) => {
     const top = await resolveRepo(repo)

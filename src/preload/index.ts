@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { AgentRun, NewComment, PullRequest, Reviewer, ReviewComment, ReviewerKind } from "@shared/types"
+import type { AgentRun, NewComment, NewPullRequest, PrMeta, PullRequest, Reviewer, ReviewComment, ReviewerKind } from "@shared/types"
 
 // ipcRenderer.invoke wraps errors as "Error invoking remote method 'x': Error: msg"; keep just msg.
 const call = <T>(channel: string, ...args: unknown[]): Promise<T> =>
@@ -11,6 +11,8 @@ const api = {
   pickRepo: () => call<string | null>("repo:pick"),
   loadPr: (repo: string, base: string, fetch = false) => call<PullRequest>("pr:load", repo, base, fetch),
   commitDiff: (repo: string, sha: string) => call<PullRequest["files"]>("pr:commit", repo, sha),
+  prMeta: (repo: string) => call<PrMeta>("pr:meta", repo),
+  createPr: (repo: string, p: NewPullRequest) => call<string>("pr:create", repo, p),
   listComments: (repo: string) => call<ReviewComment[]>("comments:list", repo),
   addComment: (repo: string, c: NewComment) => call<ReviewComment>("comments:add", repo, c),
   deleteComment: (id: string) => call<void>("comments:delete", id),

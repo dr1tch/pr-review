@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
-import { AlertCircle, Check, CircleSlash, CircleX, FileDiff, FolderOpen, GitCommitHorizontal, GitPullRequest, Loader2, MessageSquare, Play, RefreshCw, X } from "lucide-react"
+import { AlertCircle, Check, CircleSlash, CircleX, FileDiff, FilePen, FolderOpen, GitCommitHorizontal, GitPullRequest, Loader2, MessageSquare, Play, RefreshCw, X } from "lucide-react"
 import { Avatar, Composer, TimelineComment, UserAvatar } from "@/components/comments"
 import { Markdown } from "@/components/markdown"
 import { FilesChanged } from "@/components/files-changed"
 import { ReviewMenu } from "@/components/review-menu"
+import { CreatePr } from "@/components/create-pr"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { duration, timeAgo } from "@/lib/format"
@@ -11,6 +12,9 @@ import { cn } from "@/lib/utils"
 import type { AgentRun, Commit, NewComment, PullRequest, Reviewer, ReviewComment } from "@shared/types"
 
 type Tab = "conversation" | "commits" | "files"
+
+// pseudo-commit id for the working tree in the commit picker (real ids are hex)
+const WORKING = "working"
 
 function Ref({ children }: { children: string }) {
   return <code className="rounded-md bg-ring/15 px-1.5 py-0.5 font-mono text-xs text-link">{children}</code>
@@ -120,6 +124,7 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
   const showCommit = async (sha: string | null) => {
     setTab("files")
     if (!sha) return setCommit(null)
+    if (sha === WORKING) return setCommit({ sha, files: pr!.uncommitted })
     try {
       setCommit({ sha, files: await window.api.commitDiff(pr!.repo, sha) })
     } catch (e) {
@@ -231,14 +236,25 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
                 )}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-muted-foreground">
-                <span className="flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-sm font-medium text-white">
-                  <GitPullRequest className="size-4" /> Open
-                </span>
+                {pr.number != null ? (
+                  <span className="flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-sm font-medium text-white">
+                    <GitPullRequest className="size-4" /> Open
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm font-medium" title="No GitHub pull request for this branch yet">
+                    <GitPullRequest className="size-4" /> Local
+                  </span>
+                )}
                 {pr.author.name && <UserAvatar name={pr.author.name} src={pr.author.avatar} size={20} />}
                 <span>
                   {pr.author.name && <span className="font-semibold text-foreground">{pr.author.name} </span>}
                   wants to merge {pr.commits.length} commit{pr.commits.length === 1 ? "" : "s"} into <Ref>{pr.base}</Ref> from <Ref>{pr.branch}</Ref>
                 </span>
+                {pr.number == null && (
+                  <Button size="sm" className="ml-auto" onClick={() => setTab("conversation")} disabled={pr.commits.length === 0} title={pr.commits.length === 0 ? `No commits ahead of ${pr.base}` : undefined}>
+                    <GitPullRequest /> Create pull request
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -268,7 +284,21 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
             {tab === "conversation" && (
               <div className="flex items-start gap-8 py-6">
                 <div className="min-w-0 flex-1 space-y-4">
-                  <div className="flex gap-4">
+                  {pr.number == null && pr.commits.length > 0 && (
+                    <div className="flex gap-4">
+                      <Avatar author="You" />
+                      <div className="min-w-0 flex-1">
+                        <CreatePr
+                          pr={pr}
+                          onCreated={(url) => {
+                            window.open(url)
+                            load(pr.repo, base)
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {(pr.number != null || pr.commits.length === 0) && <div className="flex gap-4">
                     <UserAvatar name={pr.author.name || pr.branch} src={pr.author.avatar} />
                     <div className="min-w-0 flex-1 rounded-md border border-ring/50">
                       <div className="rounded-t-md border-b border-ring/50 bg-ring/10 px-4 py-2 text-muted-foreground">
@@ -278,7 +308,7 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
                         {pr.body.trim() ? <Markdown>{pr.body}</Markdown> : <p className="text-muted-foreground italic">No description provided.</p>}
                       </div>
                     </div>
-                  </div>
+                  </div>}
                   {prComments.map((c) => (
                     <TimelineComment key={c.id} c={c} onDelete={() => remove(c.id)} />
                   ))}
@@ -335,6 +365,13 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
 
             {tab === "commits" && (
               <div className="my-6 space-y-6">
+                {pr.uncommitted.length > 0 && (
+                  <button type="button" onClick={() => showCommit(WORKING)} className="flex w-full items-center gap-3 rounded-md border border-dashed px-4 py-3 text-left hover:bg-muted">
+                    <FilePen className="size-4 text-attention" />
+                    <span className="flex-1 font-semibold">Uncommitted changes</span>
+                    <span className="text-xs text-muted-foreground">{pr.uncommitted.length} file{pr.uncommitted.length === 1 ? "" : "s"}</span>
+                  </button>
+                )}
                 {byDay(pr.commits).map(([day, list]) => (
                   <section key={day}>
                     <h2 className="mb-2 flex items-center gap-2 text-muted-foreground">
@@ -365,6 +402,13 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
             )}
 
             {tab === "files" && commit && (() => {
+              if (commit.sha === WORKING) return (
+                <div className="mt-4 flex items-center gap-2 rounded-md border border-dashed bg-muted px-4 py-2">
+                  <FilePen className="size-4 text-attention" />
+                  <span className="min-w-0 flex-1 font-semibold">Uncommitted changes</span>
+                  <Button size="xs" variant="outline" onClick={() => showCommit(null)}>Show all changes</Button>
+                </div>
+              )
               const c = pr.commits.find((x) => x.sha === commit.sha)
               return c && (
                 <div className="mt-4 flex items-center gap-2 rounded-md border bg-muted px-4 py-2">
@@ -391,7 +435,8 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
                     aria-label="Show changes from"
                     className="ml-auto h-7 max-w-80 truncate rounded-md border bg-muted px-2 text-xs text-foreground"
                   >
-                    <option value="">All commits ({pr.commits.length})</option>
+                    <option value="">All changes ({pr.commits.length} commit{pr.commits.length === 1 ? "" : "s"}{pr.uncommitted.length ? " + uncommitted" : ""})</option>
+                    {pr.uncommitted.length > 0 && <option value={WORKING}>Uncommitted changes</option>}
                     {pr.commits.map((c) => (
                       <option key={c.sha} value={c.sha}>{c.sha} · {c.subject} · {c.author}</option>
                     ))}

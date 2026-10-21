@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { commitDiff, getPullRequest, loginFor } from "./git.ts"
+import { commitDiff, createPullRequest, getPullRequest, loginFor } from "./git.ts"
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd })
 
@@ -82,4 +82,62 @@ test("commit diff shows only that commit; PR title falls back to the oldest comm
   assert.deepEqual(pr.commits.map((c) => [c.subject, c.body]), [["second change", ""], ["first change", "why it matters"]])
   assert.deepEqual((await commitDiff(repo, pr.commits[1].sha)).map((f) => f.to), ["one"])
   await assert.rejects(commitDiff(repo, "--output=x"))
+})
+
+test("uncommitted and untracked work shows up before it is committed", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "pr-review-"))
+  sh(repo, "init", "-q", "-b", "master")
+  writeFileSync(join(repo, "a"), "a\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "base")
+  sh(repo, "checkout", "-qb", "feat")
+  writeFileSync(join(repo, "committed"), "c\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "committed")
+  writeFileSync(join(repo, "a"), "a\nedited\n") // tracked, not staged
+  writeFileSync(join(repo, "new"), "n\n") // untracked
+  writeFileSync(join(repo, ".gitignore"), "ignored\n")
+  writeFileSync(join(repo, "ignored"), "i\n")
+
+  const pr = await getPullRequest(repo, "master")
+  assert.deepEqual(pr.files.map((f) => f.to).sort(), [".gitignore", "a", "committed", "new"])
+  assert.deepEqual(pr.uncommitted.map((f) => f.to).sort(), [".gitignore", "a", "new"])
+  assert.equal(pr.uncommitted.find((f) => f.to === "new")?.additions, 1)
+  assert.equal(pr.commits.length, 1)
+})
+
+test("creating a PR pushes the branch and passes every field to gh as --flag=value", { skip: process.platform === "win32" }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "pr-review-"))
+  const remote = join(root, "remote.git"), repo = join(root, "repo"), bin = join(root, "bin")
+  sh(root, "init", "-q", "--bare", "-b", "master", remote)
+  sh(root, "clone", "-q", remote, repo)
+  writeFileSync(join(repo, "a"), "a\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "base")
+  sh(repo, "push", "-q", "origin", "master")
+  sh(repo, "checkout", "-qb", "feat")
+  writeFileSync(join(repo, "b"), "b\n")
+  sh(repo, "add", ".")
+  sh(repo, "commit", "-qm", "feat")
+  // fake gh: records its arguments, prints a PR URL
+  execFileSync("mkdir", [bin])
+  writeFileSync(join(bin, "gh"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${root}/args"\necho https://github.com/o/r/pull/7\n`)
+  chmodSync(join(bin, "gh"), 0o755)
+  const path = process.env.PATH
+  process.env.PATH = `${bin}:${path}`
+  try {
+    await assert.rejects(createPullRequest(repo, { base: "master", title: " ", body: "", draft: false, reviewers: [], assignees: [], labels: [], milestone: null }), /Title is required/)
+    const url = await createPullRequest(repo, {
+      base: "origin/master", title: "Add b", body: "line 1\n- item", draft: true,
+      reviewers: ["alice", "-x"], assignees: ["me"], labels: ["good first issue"], milestone: "v1",
+    })
+    assert.equal(url, "https://github.com/o/r/pull/7")
+    assert.equal(execFileSync("git", ["rev-parse", "feat"], { cwd: remote }).toString(), execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo }).toString())
+    assert.deepEqual(readFileSync(join(root, "args"), "utf8").trimEnd().split("\n"), [
+      "pr", "create", "--base=master", "--head=feat", "--title=Add b", "--body=line 1", "- item", "--draft",
+      "--reviewer=alice", "--reviewer=-x", "--assignee=me", "--label=good first issue", "--milestone=v1",
+    ])
+  } finally {
+    process.env.PATH = path
+  }
 })

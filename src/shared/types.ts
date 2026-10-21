@@ -28,8 +28,28 @@ export type PullRequest = {
   number: number | null
   author: { name: string; avatar: string | null }
   commits: Commit[]
-  files: parseDiff.File[]
+  files: parseDiff.File[] // since the merge-base, uncommitted work included
+  uncommitted: parseDiff.File[] // working tree vs HEAD, untracked files included
   fetchError?: string
+}
+
+export type NewPullRequest = {
+  base: string
+  title: string
+  body: string
+  draft: boolean
+  reviewers: string[]
+  assignees: string[]
+  labels: string[]
+  milestone: string | null
+}
+
+export type PrMeta = {
+  labels: { name: string; color: string }[]
+  users: string[]
+  milestones: string[]
+  me: string | null // the logged-in gh user
+  template: string | null // the repo's pull request template
 }
 
 export type ReviewerKind = "agent" | "skill"
