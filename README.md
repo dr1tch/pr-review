@@ -1,5 +1,7 @@
 # PR Review
 
+![PR Review demo](docs/demo.gif)
+
 Desktop app (Linux + Windows) for reviewing a local branch like a GitHub pull request: `HEAD` vs a base branch (default `master`), split diff, file tree, inline Markdown comments, and buttons that run your Claude Code agents (`~/.claude/agents`, `<repo>/.claude/agents`) as reviewers.
 
 Needs `git` and the `claude` CLI on PATH. Optional: `gh` (logged in) to show the GitHub PR's title, description, number and author avatars.
@@ -17,3 +19,11 @@ npm test && npm run typecheck
 - Agents run `claude -p --agent <name>` in the repo with read-only tools; the diff is passed in the prompt and the reply's trailing JSON block becomes inline comments.
 - Releases: push a tag (`git tag v0.2.0 && git push origin v0.2.0`) and `.github/workflows/release.yml` builds the AppImage, `.deb` and Windows installer and attaches them to a GitHub release.
 - Linux: prefer the `.deb` — on Ubuntu 24.04+ the AppImage needs `--no-sandbox` because of AppArmor.
+
+## Screenshots
+
+| Files changed | Commits |
+|---|---|
+| ![Files changed](docs/files-changed.png) | ![Commits](docs/commits.png) |
+| **Single commit** | **Review with an agent or skill** |
+| ![Single commit](docs/commit.png) | ![Reviewer menu](docs/review-menu.png) |
