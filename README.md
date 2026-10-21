@@ -78,3 +78,7 @@ Push a version tag. `.github/workflows/release.yml` builds the Linux and Windows
 ```bash
 git tag v0.3.0 && git push origin v0.3.0
 ```
+
+## License
+
+[MIT](LICENSE)
