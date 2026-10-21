@@ -1,0 +1,73 @@
+{
+  "name": "pr-review",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings --test src/shared/*.test.ts src/main/*.test.ts src/renderer/lib/*.test.ts",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:win": "electron-vite build && electron-builder --win"
+  },
+  "dependencies": {
+    "parse-diff": "^0.12.0"
+  },
+  "devDependencies": {
+    "@base-ui/react": "^1.9.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron": "^44.9.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "github-markdown-css": "^5.9.0",
+    "highlight.js": "^11.12.0",
+    "lucide-react": "^1.60.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^8.3.4"
+  },
+  "description": "Local GitHub-style PR review with Claude Code agent reviewers",
+  "author": {
+    "name": "Youssouf Kacemi",
+    "email": "youssouf.kacemi@gmail.com"
+  },
+  "main": "out/main/index.js",
+  "build": {
+    "appId": "dev.dr1tch.pr-review",
+    "productName": "PR Review",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "homepage": "https://github.com/dr1tch/pr-review"
+}
