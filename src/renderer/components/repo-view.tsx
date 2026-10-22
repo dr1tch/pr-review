@@ -57,7 +57,7 @@ type Props = {
   repo: string
   base: string
   hidden: boolean
-  onOpen: (repo: string, base: string) => void // tab now points at this repo/base
+  onOpen: (repo: string, base: string, branch: string) => void // tab now points at this repo/base/branch
 }
 
 // One repository tab: its PR diff, comments and reviewer runs. Stays mounted while hidden so runs keep updating.
@@ -84,7 +84,7 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
       setComments(c)
       setReviewers(a.reviewers)
       setRuns(a.runs)
-      onOpen(p.repo, baseRef)
+      onOpen(p.repo, baseRef, p.branch)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -97,6 +97,16 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
     // only on mount: later loads come from the toolbar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A branch checked out elsewhere (terminal, IDE) would leave this tab showing the old one: reload when the
+  // window regains focus or the tab is shown and the folder is on another branch.
+  useEffect(() => {
+    if (!pr || hidden) return
+    const check = () => window.api.currentBranch(pr.repo).then((b) => { if (b !== pr.branch) load(pr.repo, base) }, () => {})
+    check()
+    addEventListener("focus", check)
+    return () => removeEventListener("focus", check)
+  }, [pr, hidden, base, load])
 
   // The main process pushes an event when an agent run finishes; refresh runs and its comments.
   useEffect(() => {
@@ -181,6 +191,7 @@ export function RepoView({ repo: initialRepo, base: initialBase, hidden, onOpen 
     <div className={cn("min-h-0 flex-1 flex-col", hidden ? "hidden" : "flex")}>
       <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
         {pr && <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={pr.repo}>{pr.repo}</span>}
+        {pr && <span className="shrink-0" title="Current branch"><Ref>{pr.branch}</Ref></span>}
         <form
           className="ml-auto flex items-center gap-2"
           onSubmit={(e) => {

@@ -11,6 +11,7 @@ const api = {
   pickRepo: () => call<string | null>("repo:pick"),
   loadPr: (repo: string, base: string, fetch = false) => call<PullRequest>("pr:load", repo, base, fetch),
   commitDiff: (repo: string, sha: string) => call<PullRequest["files"]>("pr:commit", repo, sha),
+  currentBranch: (repo: string) => call<string>("repo:branch", repo),
   prMeta: (repo: string) => call<PrMeta>("pr:meta", repo),
   createPr: (repo: string, p: NewPullRequest) => call<string>("pr:create", repo, p),
   listComments: (repo: string) => call<ReviewComment[]>("comments:list", repo),

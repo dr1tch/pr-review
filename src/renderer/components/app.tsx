@@ -3,7 +3,7 @@ import { FolderGit2, GitPullRequest, Plus, X } from "lucide-react"
 import { RepoView } from "@/components/repo-view"
 import { cn } from "@/lib/utils"
 
-type RepoTab = { id: string; repo: string; base: string }
+type RepoTab = { id: string; repo: string; base: string; branch?: string }
 
 const STORAGE_KEY = "pr-review:tabs"
 const newTab = (): RepoTab => ({ id: crypto.randomUUID(), repo: "", base: "master" })
@@ -58,8 +58,8 @@ export function App() {
   })
 
   const opened = useCallback(
-    (id: string, repo: string, base: string) =>
-      update((s) => ({ ...s, tabs: s.tabs.map((t) => (t.id === id ? { ...t, repo, base } : t)) })),
+    (id: string, repo: string, base: string, branch: string) =>
+      update((s) => ({ ...s, tabs: s.tabs.map((t) => (t.id === id ? { ...t, repo, base, branch } : t)) })),
     [update],
   )
 
@@ -74,13 +74,16 @@ export function App() {
               <div
                 key={t.id}
                 className={cn(
-                  "group -mb-px flex h-9 max-w-56 shrink-0 items-center gap-2 rounded-t-md border border-b-0 pr-1 pl-3",
+                  "group -mb-px flex h-9 max-w-80 shrink-0 items-center gap-2 rounded-t-md border border-b-0 pr-1 pl-3",
                   selected ? "border-border bg-background" : "border-transparent text-muted-foreground hover:bg-secondary",
                 )}
               >
-                <button role="tab" type="button" aria-selected={selected} onClick={() => update((s) => ({ ...s, active: t.id }))} className="flex min-w-0 items-center gap-2" title={t.repo || "New tab"}>
+                <button role="tab" type="button" aria-selected={selected} onClick={() => update((s) => ({ ...s, active: t.id }))} className="flex min-w-0 items-center gap-2" title={t.repo ? `${t.repo}${t.branch ? ` (${t.branch})` : ""}` : "New tab"}>
                   <FolderGit2 className="size-4 shrink-0" />
-                  <span className="truncate">{t.repo ? repoName(t.repo) : "New tab"}</span>
+                  <span className="truncate">
+                    {t.repo ? repoName(t.repo) : "New tab"}
+                    {t.branch && <span className="ml-1.5 font-mono text-xs text-muted-foreground">{t.branch}</span>}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -99,7 +102,7 @@ export function App() {
         </button>
       </header>
       {tabs.map((t) => (
-        <RepoView key={t.id} repo={t.repo} base={t.base} hidden={t.id !== active} onOpen={(repo, base) => opened(t.id, repo, base)} />
+        <RepoView key={t.id} repo={t.repo} base={t.base} hidden={t.id !== active} onOpen={(repo, base, branch) => opened(t.id, repo, base, branch)} />
       ))}
     </div>
   )

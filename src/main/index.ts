@@ -49,6 +49,7 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0]
   })
   ipcMain.handle("pr:load", async (_e, repoPath: string, base: string, fetch: boolean) => getPullRequest(await resolveRepo(repoPath), base, fetch === true))
+  ipcMain.handle("repo:branch", async (_e, repoPath: string) => currentBranch(await resolveRepo(repoPath)))
   ipcMain.handle("pr:meta", async (_e, repoPath: string) => prMeta(await resolveRepo(repoPath)))
   ipcMain.handle("pr:create", async (_e, repoPath: string, p: NewPullRequest) => createPullRequest(await resolveRepo(repoPath), p ?? ({} as NewPullRequest)))
   ipcMain.handle("pr:commit", async (_e, repoPath: string, sha: string) => commitDiff(await resolveRepo(repoPath), String(sha)))
