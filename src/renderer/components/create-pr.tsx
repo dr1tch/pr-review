@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { AlertCircle, ArrowLeft, GitPullRequest, Loader2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -84,8 +84,14 @@ export function CreatePr({ pr, onCreated }: { pr: PullRequest; onCreated: (url: 
   const [assignees, setAssignees] = useState<string[]>([])
   const [labels, setLabels] = useState<string[]>([])
   const [milestone, setMilestone] = useState("")
-  const [busy, setBusy] = useState<"draft" | "ready" | null>(null)
+  const [busy, setBusy] = useState<"draft" | "ready" | "generate" | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const generation = useRef(0)
+
+  useEffect(() => {
+    setBusy(null)
+    return () => { generation.current++ }
+  }, [pr.repo, pr.branch, base])
 
   useEffect(() => {
     let live = true
@@ -107,6 +113,21 @@ export function CreatePr({ pr, onCreated }: { pr: PullRequest; onCreated: (url: 
       setBusy(null)
     }
   }
+  const generate = async () => {
+    const request = ++generation.current
+    setBusy("generate")
+    setError(null)
+    try {
+      const draft = await window.api.generatePrDraft(pr.repo, base, pr.branch)
+      if (request !== generation.current) return
+      setTitle(draft.title)
+      setBody(draft.body)
+    } catch (e) {
+      if (request === generation.current) setError((e as Error).message)
+    } finally {
+      if (request === generation.current) setBusy(null)
+    }
+  }
   const labelColor = (name: string) => {
     const c = meta?.labels.find((l) => l.name === name)?.color
     return c ? `#${c}` : undefined
@@ -122,7 +143,7 @@ export function CreatePr({ pr, onCreated }: { pr: PullRequest; onCreated: (url: 
         <div className="flex flex-wrap items-center gap-2 border-b bg-muted px-4 py-2.5 text-sm">
           <label className="flex items-center gap-1.5">
             <span className="text-muted-foreground">base:</span>
-            <Input value={base} onChange={(e) => setBase(e.target.value)} aria-label="Base branch" className="h-7 w-44 font-mono text-xs" />
+            <Input value={base} disabled={!!busy} onChange={(e) => setBase(e.target.value)} aria-label="Base branch" className="h-7 w-44 font-mono text-xs" />
           </label>
           <ArrowLeft className="size-4 text-muted-foreground" />
           <span><span className="text-muted-foreground">compare:</span> <code className="font-mono text-xs">{pr.branch}</code></span>
@@ -140,9 +161,15 @@ export function CreatePr({ pr, onCreated }: { pr: PullRequest; onCreated: (url: 
 
         <div className="flex flex-wrap gap-6 p-4">
           <div className="min-w-0 flex-1 space-y-3">
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" placeholder="Title" className="h-9 text-base" />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p role="status" className="text-xs text-muted-foreground">{busy === "generate" ? "Generating from committed changes…" : "Built-in: PR title and description. Fills the fields below."}</p>
+              <Button variant="outline" onClick={generate} disabled={!!busy || !meta}>
+                {busy === "generate" && <Loader2 className="animate-spin" />} Generate title and description
+              </Button>
+            </div>
+            <Input value={title} disabled={!!busy} onChange={(e) => setTitle(e.target.value)} aria-label="Title" placeholder="Title" className="h-9 text-base" />
             <div className="rounded-md border">
-              <MarkdownEditor value={body} onChange={setBody} preview={preview} onPreview={setPreview} aria-label="Description" placeholder="Add a description (Markdown supported)" className="min-h-72" />
+              <MarkdownEditor value={body} disabled={!!busy} onChange={setBody} preview={preview} onPreview={setPreview} aria-label="Description" placeholder="Add a description (Markdown supported)" className="min-h-72" />
               <div className="h-2" />
             </div>
             {error && (

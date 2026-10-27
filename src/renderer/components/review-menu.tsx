@@ -4,8 +4,7 @@ import { Bot, ChevronDown, Loader2, Search, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { AgentRun, Reviewer } from "@shared/types"
-
-const SUGGESTED = /review|audit|secur|simplif|health/i // matched on names only
+import { reviewerGroups } from "@/lib/reviewers"
 
 type Props = {
   reviewers: Reviewer[]
@@ -19,16 +18,7 @@ export function ReviewMenu({ reviewers, runs, onRun, onCancel }: Props) {
   const [query, setQuery] = useState("")
   const running = runs.filter((r) => r.status === "running")
 
-  const groups = useMemo(() => {
-    const q = query.toLowerCase()
-    const match = reviewers.filter((r) => `${r.name} ${r.description}`.toLowerCase().includes(q))
-    const suggested = q ? [] : match.filter((r) => SUGGESTED.test(r.name))
-    return [
-      { label: "Suggested", items: suggested },
-      { label: "Agents", items: match.filter((r) => r.kind === "agent") },
-      { label: "Skills", items: match.filter((r) => r.kind === "skill") },
-    ].filter((g) => g.items.length)
-  }, [reviewers, query])
+  const groups = useMemo(() => reviewerGroups(reviewers, query), [reviewers, query])
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -82,7 +72,7 @@ export function ReviewMenu({ reviewers, runs, onRun, onCancel }: Props) {
                         {r.kind === "agent" ? <Bot className="mt-0.5 size-4 shrink-0 text-done" /> : <Sparkles className="mt-0.5 size-4 shrink-0 text-link" />}
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2">
-                            <span className="truncate font-semibold">{r.name}</span>
+                            <span className="truncate font-semibold">{r.source === "builtin" ? r.name.replace(/^builtin:/, "") : r.name}</span>
                             {r.source !== "user" && <span className="shrink-0 rounded-full border px-1.5 text-[11px] leading-4 text-muted-foreground">{r.source}</span>}
                             {busy && <Loader2 className="size-3.5 shrink-0 animate-spin text-attention" />}
                           </span>

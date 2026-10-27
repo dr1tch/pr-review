@@ -2,9 +2,11 @@ import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
 import type { NewComment, NewPullRequest, ReviewerKind } from "@shared/types"
+import { parseOpenArgs, type OpenGroup, type OpenRequest } from "@shared/open-args"
 import { cancelReview, listReviewers, startReview } from "./reviewers"
+import { generatePrDraft } from "./pr-draft"
 import { addComments, deleteComment, listComments, listRuns, openDb } from "./db"
-import { commitDiff, createPullRequest, currentBranch, diffAgainst, getPullRequest, prMeta, resolveBase, resolveRepo } from "./git"
+import { commitDiff, createPullRequest, currentBranch, defaultBase, diffAgainst, getPullRequest, prMeta, resolveBase, resolveRepo } from "./git"
 
 // Apps launched from a desktop menu don't get the shell's PATH, so `claude`/`git` from ~/.local/bin etc. go missing.
 function loadShellPath() {
@@ -19,6 +21,25 @@ function loadShellPath() {
 }
 
 let win: BrowserWindow | null = null
+
+// Groups asked for on the command line wait here until the renderer takes them.
+let pendingOpens: OpenGroup[] = []
+
+async function queueOpen(req: OpenRequest | null) {
+  if (!req) return
+  const repos: OpenGroup["repos"] = []
+  for (const { path, base } of req.repos) {
+    try {
+      const repo = await resolveRepo(path)
+      repos.push(base ? { repo, base, explicitBase: true } : { repo, base: await defaultBase(repo) })
+    } catch {
+      // not a git repo: skip it, open the rest
+    }
+  }
+  if (!repos.length) return
+  pendingOpens.push({ group: req.group, repos })
+  win?.webContents.send("open:pending")
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -44,6 +65,7 @@ function createWindow() {
 }
 
 function registerIpc() {
+  ipcMain.handle("open:take", () => pendingOpens.splice(0))
   ipcMain.handle("repo:pick", async () => {
     const r = await dialog.showOpenDialog(win!, { title: "Open repository", properties: ["openDirectory"] })
     return r.canceled ? null : r.filePaths[0]
@@ -51,6 +73,7 @@ function registerIpc() {
   ipcMain.handle("pr:load", async (_e, repoPath: string, base: string, fetch: boolean) => getPullRequest(await resolveRepo(repoPath), base, fetch === true))
   ipcMain.handle("repo:branch", async (_e, repoPath: string) => currentBranch(await resolveRepo(repoPath)))
   ipcMain.handle("pr:meta", async (_e, repoPath: string) => prMeta(await resolveRepo(repoPath)))
+  ipcMain.handle("pr:generate", async (_e, repoPath: string, base: string, branch: string) => generatePrDraft(await resolveRepo(repoPath), base, branch))
   ipcMain.handle("pr:create", async (_e, repoPath: string, p: NewPullRequest) => createPullRequest(await resolveRepo(repoPath), p ?? ({} as NewPullRequest)))
   ipcMain.handle("pr:commit", async (_e, repoPath: string, sha: string) => commitDiff(await resolveRepo(repoPath), String(sha)))
   ipcMain.handle("comments:list", async (_e, repo: string) => {
@@ -82,11 +105,21 @@ function registerIpc() {
   })
 }
 
-app.whenReady().then(() => {
+// One app: a second launch hands its --group/--repo request to the running window and exits.
+const primary = app.requestSingleInstanceLock()
+if (!primary) app.quit()
+app.on("second-instance", (_e, argv) => {
+  if (win?.isMinimized()) win.restore()
+  win?.focus()
+  queueOpen(parseOpenArgs(argv))
+})
+
+if (primary) app.whenReady().then(() => {
   loadShellPath()
   openDb(join(app.getPath("userData"), "pr-review.db"))
   registerIpc()
   createWindow()
+  queueOpen(parseOpenArgs(process.argv))
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
 

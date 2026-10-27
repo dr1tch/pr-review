@@ -35,6 +35,11 @@ export async function currentBranch(repo: string) {
 
 const ok = (p: Promise<unknown>) => p.then(() => true, () => false)
 
+// The remote's default branch (origin/HEAD), else "master".
+export async function defaultBase(repo: string) {
+  return git(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).then((s) => s.trim().replace(/^origin\//, "") || "master", () => "master")
+}
+
 // A stale local base makes commits pulled in by a rebase show up as PR changes; GitHub compares against the
 // remote branch, so use the remote-tracking ref whenever it is ahead of (or equal to) the local one.
 export async function resolveBase(repo: string, base: string) {
@@ -133,6 +138,8 @@ async function githubPr(repo: string, branch: string): Promise<GhPr | null> {
 
 const TEMPLATES = [".github/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE.md", "pull_request_template.md", "docs/pull_request_template.md"]
 
+export const readPrTemplate = (repo: string) => Promise.any(TEMPLATES.map((t) => readFile(join(repo, t), "utf8"))).catch(() => null)
+
 // What the "Open a pull request" form offers: labels, people, milestones and the repo's PR template.
 // Each lookup is optional: a repo without labels or a token without collaborator access just offers less.
 export async function prMeta(repo: string): Promise<PrMeta> {
@@ -142,7 +149,7 @@ export async function prMeta(repo: string): Promise<PrMeta> {
     list(["api", "--paginate", "repos/{owner}/{repo}/collaborators", "--jq", ".[].login"]),
     list(["api", "repos/{owner}/{repo}/milestones", "--jq", ".[].title"]),
     gh(repo, ["api", "user", "--jq", ".login"]).then((s) => s.trim() || null, () => null),
-    Promise.any(TEMPLATES.map((t) => readFile(join(repo, t), "utf8"))).catch(() => null),
+    readPrTemplate(repo),
   ])
   return { labels, users, milestones, me, template }
 }

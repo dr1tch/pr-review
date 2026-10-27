@@ -4,6 +4,8 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { frontmatter } from "@shared/frontmatter"
 import { parseReview } from "@shared/review-parse"
+import { BUILTIN_REVIEWERS } from "@shared/builtin-reviewers"
+import { BUILTIN_INSTRUCTIONS } from "./builtin-reviewers"
 import type { AgentRun, Reviewer } from "@shared/types"
 import { addComments, finishRun, insertRun } from "./db"
 
@@ -76,7 +78,7 @@ export async function listReviewers(repo: string): Promise<Reviewer[]> {
     skillsIn(join(repo, ".claude", "skills"), "project"),
   ])
   const byKey = new Map<string, Reviewer>() // later (project) entries win, as in Claude Code
-  for (const r of groups.flat()) {
+  for (const r of [...groups.flat(), ...BUILTIN_REVIEWERS]) {
     if (!NAME.test(r.name)) continue
     byKey.set(`${r.kind}:${r.name}`, { ...r, description: r.description.split("\n")[0].slice(0, 300) })
   }
@@ -110,19 +112,21 @@ export function startReview(repo: string, branch: string, base: string, reviewer
   insertRun(run)
 
   const truncated = diff.length > MAX_DIFF
+  const builtin = reviewer.source === "builtin" ? BUILTIN_INSTRUCTIONS[agent] : undefined
   // Diff goes in the prompt so agents without a shell can still review it; stdin avoids argv size limits.
-  const how = reviewer.kind === "skill"
+  const how = builtin ? "Review" : reviewer.kind === "skill"
     ? `Invoke the "${agent}" skill with the Skill tool and apply it to this pull request: review`
     : "Review"
   const prompt = `${how} the pull request for branch "${branch}" against base "${base}" in this repository. ` +
-    `Read surrounding code as needed. Do not modify any files.\n\n${OUTPUT_FORMAT}\n\n` +
+    `Read surrounding code as needed. Do not modify any files.\n\n${builtin ?? ""}\n\n${OUTPUT_FORMAT}\n\n` +
     `Diff (\`git diff $(git merge-base ${base} HEAD)\`, uncommitted and untracked work included${truncated ? ", truncated: read the remaining files yourself" : ""}):\n` +
     "```diff\n" + diff.slice(0, MAX_DIFF) + "\n```"
   const child = spawn(
     "claude",
     [
       "-p",
-      ...(reviewer.kind === "agent" ? ["--agent", agent] : []),
+      ...(reviewer.kind === "agent" && !builtin ? ["--agent", agent] : []),
+      ...(builtin ? ["--tools", "Read,Grep,Glob", "--disable-slash-commands", "--strict-mcp-config"] : []),
       "--output-format", "json",
       // read-only: no edits, no shell
       "--allowedTools", isWin ? `"${READ_ONLY_TOOLS}"` : READ_ONLY_TOOLS,
